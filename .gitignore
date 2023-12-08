@@ -1,0 +1,6 @@
+build_asan
+build_debug
+build_release
+*.o
+.DS_Store
+build/

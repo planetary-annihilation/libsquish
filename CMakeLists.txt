@@ -1,39 +1,34 @@
 # cmake build file for squish
 # by Stefan Roettger (stefan@stereofx.org)
 # updated by Simon Brown (si@sjbrown.co.uk)
+# updated for Apple Silicon by Bob Berry (bberry@galacticannihilation.gg)
 
 # features:
 #   Xcode: builds universal binaries, uses SSE2 on i386 and Altivec on ppc
 #   Unix and VS: SSE2 support is enabled by default
 #   use BUILD_SQUISH_WITH_SSE2 and BUILD_SQUISH_WITH_ALTIVEC to override
+cmake_minimum_required(VERSION 3.21) # Updated the minimum required version for better modern CMake features
 
-PROJECT(squish)
+project(squish LANGUAGES CXX) # Specified the language to make it clear
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.3)
+# Options
+option(BUILD_SQUISH_WITH_SSE2 "Build with SSE2." OFF)
+option(BUILD_SQUISH_WITH_ALTIVEC "Build with Altivec." OFF)
+option(BUILD_SHARED_LIBS "Build shared libraries." OFF)
+option(BUILD_SQUISH_EXTRA "Build extra source code." OFF)
 
-OPTION(BUILD_SQUISH_WITH_SSE2 "Build with SSE2." ON)
-OPTION(BUILD_SQUISH_WITH_ALTIVEC "Build with Altivec." OFF)
+# SSE2 and Altivec are not applicable for Apple Silicon, so disabling them
+if(APPLE)
+    set(BUILD_SQUISH_WITH_SSE2 OFF)
+    set(BUILD_SQUISH_WITH_ALTIVEC OFF)
+endif()
 
-OPTION(BUILD_SHARED_LIBS "Build shared libraries." OFF)
-
-OPTION(BUILD_SQUISH_EXTRA "Build extra source code." OFF)
-
-IF (CMAKE_GENERATOR STREQUAL "Xcode")
-    SET(CMAKE_OSX_ARCHITECTURES "i386;ppc")
-ELSE (CMAKE_GENERATOR STREQUAL "Xcode")
-    IF (BUILD_SQUISH_WITH_SSE2 AND NOT WIN32)
-        ADD_DEFINITIONS(-DSQUISH_USE_SSE=2 -msse2)
-    ENDIF (BUILD_SQUISH_WITH_SSE2 AND NOT WIN32)
-    IF (BUILD_SQUISH_WITH_ALTIVEC AND NOT WIN32)
-        ADD_DEFINITIONS(-DSQUISH_USE_ALTIVEC=1 -maltivec)
-    ENDIF (BUILD_SQUISH_WITH_ALTIVEC AND NOT WIN32)
-ENDIF (CMAKE_GENERATOR STREQUAL "Xcode")
-
-SET(SQUISH_HDRS
+# Header and Source files
+set(SQUISH_HDRS
     squish.h
-    )
+)
 
-SET(SQUISH_SRCS
+set(SQUISH_SRCS
     alpha.cpp
     alpha.h
     clusterfit.cpp
@@ -56,27 +51,49 @@ SET(SQUISH_SRCS
     singlecolourfit.h
     singlecolourlookup.inl
     squish.cpp
-    )
+)
 
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
+# Include directories
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-ADD_LIBRARY(squish ${SQUISH_SRCS} ${SQUISH_HDRS})
+# Library target
+add_library(squish ${SQUISH_SRCS} ${SQUISH_HDRS})
 
-SET_TARGET_PROPERTIES(
-    squish PROPERTIES
+# Set a variable for the suffix based on the build type
+set(SQUISH_SUFFIX "")
+    if(CMAKE_BUILD_TYPE STREQUAL "debug")
+        set(SQUISH_SUFFIX "_debug")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "asan")
+        set(SQUISH_SUFFIX "_asan")
+endif()
+
+set_target_properties(squish PROPERTIES
+    OUTPUT_NAME "squish${SQUISH_SUFFIX}"
     PUBLIC_HEADER "${SQUISH_HDRS}"
     VERSION 0.0
     SOVERSION 0.0
-    DEBUG_POSTFIX "d"
-    XCODE_ATTRIBUTE_GCC_PREPROCESSOR_DEFINITIONS "$(SQUISH_CPP_$(CURRENT_ARCH))"
-    XCODE_ATTRIBUTE_OTHER_CFLAGS "$(SQUISH_CFLAGS_$(CURRENT_ARCH))"
-    XCODE_ATTRIBUTE_SQUISH_CPP_i386 "SQUISH_USE_SSE=2"
-    XCODE_ATTRIBUTE_SQUISH_CFLAGS_i386 ""
-    XCODE_ATTRIBUTE_SQUISH_CPP_ppc "SQUISH_USE_ALTIVEC=1"
-    XCODE_ATTRIBUTE_SQUISH_CFLAGS_ppc "-maltivec"
-    )
+)
 
-IF (BUILD_SQUISH_EXTRA)
+# Debug configuration
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
+
+# Address Sanitizer configuration
+set(CMAKE_CXX_FLAGS_ASAN
+    "-fsanitize=address -fno-omit-frame-pointer -g"
+    CACHE STRING "Flags used by the C++ compiler during Address Sanitizer builds."
+    FORCE)
+set(CMAKE_C_LINK_EXECUTABLE_ASAN
+    "${CMAKE_C_LINK_EXECUTABLE} -fsanitize=address"
+    CACHE STRING "Flags used for linking binaries during Address Sanitizer builds."
+    FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_ASAN
+    "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address"
+    CACHE STRING "Flags used for executables during Address Sanitizer builds."
+    FORCE)
+
+# Extra build targets
+if(BUILD_SQUISH_EXTRA)
     SET(SQUISHTEST_SRCS extra/squishtest.cpp)
 
     ADD_EXECUTABLE(squishtest ${SQUISHTEST_SRCS})
@@ -94,11 +111,12 @@ IF (BUILD_SQUISH_EXTRA)
         SET_TARGET_PROPERTIES(squishpng PROPERTIES DEBUG_POSTFIX "d")
         TARGET_LINK_LIBRARIES(squishpng squish ${PNG_LIBRARIES})
     ENDIF (PNG_FOUND)
-ENDIF (BUILD_SQUISH_EXTRA)
+endif()
 
-INSTALL(
+# Installation
+install(
     TARGETS squish
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     PUBLIC_HEADER DESTINATION include
-    )
+)
